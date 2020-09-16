@@ -45,8 +45,8 @@ bool compareValList(rapidjson::Value::ConstMemberIterator &ItRets,
   for (; ItObj != ItRets->value.GetArray().end(); ++ItObj, ++ItVal) {
     std::string Type = ItObj->GetObject()["type"].GetString();
     std::string Value = ItObj->GetObject()["value"].GetString();
-    /// Handle NaN case
     if (Value.substr(0, 4) == "nan:") {
+      /// Handle NaN case
       /// TODO: nan:canonical and nan:arithmetic
       if (Type == "f32") {
         float F = std::get<float>(*ItVal);
@@ -56,6 +56,20 @@ bool compareValList(rapidjson::Value::ConstMemberIterator &ItRets,
       } else if (Type == "f64") {
         double D = std::get<double>(*ItVal);
         if (!std::isnan(D)) {
+          return false;
+        }
+      }
+    } else if (Type == "externref" || Type == "funcref") {
+      /// Handle reference value case
+      if (Value == "null") {
+        return SSVM::isNullRef(*ItVal);
+      } else {
+        if (SSVM::isNullRef(*ItVal)) {
+          return false;
+        }
+        uint32_t V1 = SSVM::retrieveRefIdx(*ItVal);
+        uint32_t V2 = static_cast<uint32_t>(std::stoul(Value));
+        if (V1 != V2) {
           return false;
         }
       }
@@ -85,7 +99,22 @@ parseValList(rapidjson::Value::ConstMemberIterator &ItArgs) {
        It != ItArgs->value.GetArray().end(); It++) {
     std::string Type = It->GetObject()["type"].GetString();
     std::string Value = It->GetObject()["value"].GetString();
-    if (Type == "i32" || Type == "f32") {
+    if (Type == "externref") {
+      if (Value == "null") {
+        Vals.emplace_back(SSVM::genRefType(SSVM::RefType::ExternRef));
+      } else {
+        Vals.emplace_back(
+            SSVM::genRefType(SSVM::RefType::ExternRef,
+                             static_cast<uint32_t>(std::stoul(Value))));
+      }
+    } else if (Type == "funcref") {
+      if (Value == "null") {
+        Vals.emplace_back(SSVM::genRefType(SSVM::RefType::FuncRef));
+      } else {
+        Vals.emplace_back(SSVM::genRefType(
+            SSVM::RefType::FuncRef, static_cast<uint32_t>(std::stoul(Value))));
+      }
+    } else if (Type == "i32" || Type == "f32") {
       Vals.emplace_back(static_cast<uint32_t>(std::stoul(Value)));
     } else {
       Vals.emplace_back(static_cast<uint64_t>(std::stoull(Value)));
@@ -226,7 +255,8 @@ bool unexpectInvoke(std::map<std::string, std::string> &Alias,
     Code = static_cast<SSVM::ErrCode>(Res.error());
   }
 
-  if (SSVM::ErrCodeStr[Code].rfind(ItMsg->value.GetString(), 0) != 0) {
+  if (std::string(ItMsg->value.GetString()).rfind(SSVM::ErrCodeStr[Code], 0) !=
+      0) {
     std::cout << "   ##### expected text : " << ItMsg->value.GetString()
               << std::endl;
     std::cout << "   ######## error text : " << SSVM::ErrCodeStr[Code]
@@ -249,7 +279,8 @@ bool unexpectValidate(std::string &FileName, SSVM::VM::VM &VM,
     Code = static_cast<SSVM::ErrCode>(Res.error());
   }
 
-  if (SSVM::ErrCodeStr[Code].rfind(ItMsg->value.GetString(), 0) != 0) {
+  if (std::string(ItMsg->value.GetString()).rfind(SSVM::ErrCodeStr[Code], 0) !=
+      0) {
     std::cout << "   ##### expected text : " << ItMsg->value.GetString()
               << std::endl;
     std::cout << "   ######## error text : " << SSVM::ErrCodeStr[Code]
@@ -275,7 +306,8 @@ bool unexpectInstantiate(std::string &FileName, SSVM::VM::VM &VM,
     Code = static_cast<SSVM::ErrCode>(Res.error());
   }
 
-  if (SSVM::ErrCodeStr[Code].rfind(ItMsg->value.GetString(), 0) != 0) {
+  if (std::string(ItMsg->value.GetString()).rfind(SSVM::ErrCodeStr[Code], 0) !=
+      0) {
     std::cout << "   ##### expected text : " << ItMsg->value.GetString()
               << std::endl;
     std::cout << "   ######## error text : " << SSVM::ErrCodeStr[Code]
